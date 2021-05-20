@@ -37,7 +37,6 @@ class Box:
 
     @ti.func
     def bound_check(self, x,y,vx,vy,r):
-        print(x,y)
         bounced = False
         if x - r <= self.left :
             x = self.left + r
