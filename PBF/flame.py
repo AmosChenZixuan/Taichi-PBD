@@ -6,21 +6,22 @@ ti.init(arch=ti.gpu)
 NUM_WATER_ROW = 200
 NUM_WATER_COL = 30
 NUM_WATER = NUM_WATER_ROW * NUM_WATER_COL
-NUM_SMOKE_ROW = 8
-NUM_SMOKE_COL = 5
-MAX_NUM_PARTICLE = 102400
+NUM_SMOKE_ROW = 3
+NUM_SMOKE_COL = 8
+MAX_NUM_PARTICLE = 8000
 
 #
 # GUI
 WIDTH = 600
 HEIGHT = 600
 BACKGROUND_COLOUR = 0xf0f0f0
-WATER_COLOR = 0x328ac1
+WATER_COLOR = 0x328ac1 
 SMOKE_COLOR = 0xf99613
 
 # simulator variables 
 paused = False
 display_water = False
+emit = True
 attract = 0
 mouse_pos = (0, 0)
 
@@ -86,13 +87,16 @@ def emit_smoke():
         for j in range(NUM_SMOKE_COL):
             index =  NUM_PARTICLES[None] + i * NUM_SMOKE_COL + j
             x[index][0] = 290 + j * KERNEL_SIZE *0.2#+ ti.random()
-            x[index][1] = 100 + i * KERNEL_SIZE * 0.3 #+ ti.random()
+            x[index][1] = 0 + i * KERNEL_SIZE * 0.3 #+ ti.random()
             v[index] = 0, 0 
             RADIUS[index] = 2
             mass[index] = 0.6
             rho_0[index] = calc_rho(mass[index])
             active[index] = 30
-    NUM_PARTICLES[None] += NUM_SMOKE_COL * NUM_SMOKE_ROW
+    n = NUM_PARTICLES[None] + NUM_SMOKE_COL * NUM_SMOKE_ROW
+    if n < MAX_NUM_PARTICLE:
+        NUM_PARTICLES[None] = n
+    
 
 @ti.kernel
 def apply_external_forces(mouse_x: ti.f32, mouse_y: ti.f32, attract: ti.i32):
@@ -101,7 +105,7 @@ def apply_external_forces(mouse_x: ti.f32, mouse_y: ti.f32, attract: ti.i32):
             continue
         gravity = -980
         if i > NUM_WATER:
-            gravity = 2048
+            gravity = 3600
         v[i][1] = v[i][1] + dt * gravity  
 
         # mouse interaction
@@ -175,7 +179,7 @@ def solve_iter():
     We try to satisfy the density constraint here. We compute lambdas in the first loop, then compute dx
     (Delta p in the original paper) in the second part, finally update the position.
     This follows a non-linear Jacobi Iteration pattern. We run multiple solve_iter steps in a sub-step, and
-    multiple sub-steps in a frame
+    multiple sub-steps in a frame        
     """
     for x1 in range(NUM_PARTICLES[None]):
         if not active[x1]:
@@ -233,30 +237,29 @@ def box_collision():
             if p[i][1] > HEIGHT - RADIUS[i]:
                 active[i] = 0
 
+
 @ ti.kernel
 def update():
     for i in range(NUM_PARTICLES[None]):
-        if not active[i]:
-            continue
+        # if not active[i]:
+        #     continue
         active[i] -= 1
         v[i] = (p[i] - x[i]) / dt * 0.99
         x[i] = p[i]
-    
 
     box_collision()
     for i in range(NUM_PARTICLES[None]):
         x_display[i][0] = x[i][0] / WIDTH
         x_display[i][1] = x[i][1] / HEIGHT
 
+
 def simulate(mouse_pos, attract):
-    for i in range(SUBSTEPS):
         apply_external_forces(mouse_pos[0], mouse_pos[1], attract)
         find_neighbours()
         for _ in range(SOLVE_ITERS):
-            solve_iter()
-
-        
+            solve_iter()   
         update()
+        free()
 
 def render(gui):
     q = x_display.to_numpy()
@@ -268,6 +271,25 @@ def render(gui):
             continue
         gui.circle(pos=q[i], color=SMOKE_COLOR, radius=RADIUS[i])
     gui.show()
+
+
+def free():
+    i = NUM_WATER
+    while i < NUM_PARTICLES[None]:
+        if not active[i] :
+            n = NUM_PARTICLES[None] - 1
+            active[i] = active[n]
+            active[n] = 0
+            x[i] = x[n].value
+            v[i] = v[n].value
+            p[i] = p[n].value
+            x_display[i] = x_display[n].value
+            NUM_PARTICLES[None] = n   
+            print(NUM_PARTICLES[None])
+        else:
+            i+=1
+     
+    
 
 if __name__ == '__main__':
     gui = ti.GUI('Position Based Fluid',
@@ -286,7 +308,10 @@ if __name__ == '__main__':
             elif e.key == 'e':
                 display_water = not display_water
             elif e.key == gui.SPACE:
-                emit_smoke()
+                emit = not emit
+
+        if emit:
+            emit_smoke()
 
         if gui.is_pressed(ti.GUI.RMB):
             mouse_pos = gui.get_cursor_pos()
