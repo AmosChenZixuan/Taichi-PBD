@@ -72,7 +72,7 @@ def calc_CM(x):
 @ti.func
 def update():
     for i in P:
-        p = R @ Q_0[i] + CM[None]
+        p = R[None] @ Q_0[i] + CM[None]
 
         V[i] += ALPHA * (p - P[i]) * dt_inv + dt * GRAVITY 
         X[i] += dt*V[i]
